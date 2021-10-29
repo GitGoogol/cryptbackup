@@ -54,6 +54,7 @@ def add_key(args):
     print("--------------After key generation-----------------list-secret-keys---")
     os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
 
+    args.fingerprint = genKey.fingerprint
     export_key(args)
     
     print(f"list-keys fingerprint:{genKey.fingerprint}--------")
@@ -67,10 +68,10 @@ def export_key(args):
     os.system(f"gpg2 --homedir {args.path} --list-keys")
     os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
     print("---------export and delete secret keys--------------------------------")
-    os.system(f"gpg2 -a --homedir {args.path} --batch --pinentry-mode loopback --passphrase {args.passphrase} --export-secret-keys {args.email} > priv_key.asc")
+    os.system(f"gpg2 -a --homedir {args.path} --batch --pinentry-mode loopback --passphrase {args.passphrase} --export-secret-keys {args.fingerprint} > priv_key.asc")
     #os.system(f"gpg2 --homedir {args.path} --batch --pinentry-mode loopback --passphrase {args.passphrase} --export-secret-keys {genKey.fingerprint} > priv_key.bin")
-    os.system(f"gpg2 --homedir {args.path} --batch --pinentry-mode loopback --yes --passphrase {args.passphrase} --delete-secret-keys {args.email}")
-    print(f"private key exported to '{os.path.dirname(args.argv[0])}\\priv_key.asc'")
+    os.system(f"gpg2 --homedir {args.path} --batch --pinentry-mode loopback --yes --passphrase {args.passphrase} --delete-secret-keys {args.fingerprint}")
+    print(f"private key exported to '{os.path.dirname(sys.argv[0])}\\priv_key.asc'")
     print("...\n...\n...")
     print("---------------After key removal-------------------list-keys----------")
     os.system(f"gpg2 --homedir {args.path} --list-keys")
@@ -79,6 +80,20 @@ def export_key(args):
 
 
 def remove_key(args):
+    if(args.secretkey):
+        status = os.system(f"gpg2 --homedir {args.path} --delete-secret-key {args.email}")
+        if(status==0):
+            print(f"Secret key '{args.email}' successfully removed.")
+        else:
+            print(f"key removal failed: exit code = '{status}'")
+
+    status = os.system(f"gpg2 --homedir {args.path} --delete-key {args.email}")
+    if(status==0):
+        print(f"Key '{args.email}' successfully removed.")
+    else:
+        print(f"key removal failed: exit code = '{status}'")
+
+
     gpg = gnupg.GPG(homedir=args.path)
     remove_result = gpg.delete_keys(args.email)
     pprint(str(remove_result))
@@ -240,7 +255,10 @@ def backup_handling(args):
  
 def restore_handling(args):
     status = os.system(f"gpg2 --homedir {args.path} -u {args.email} -o {args.dst} -d {args.src}")
-
+    if(status==0):
+        print(f"File '{args.src}' successfully decrypted to '{args.dst}'")
+    else:
+        print(f"restore failed: exit code = '{status}'")
 
 if __name__ == '__main__':
     if platform.system() != 'Linux':
@@ -265,6 +283,7 @@ if __name__ == '__main__':
   
     remkey_parser = subparsers.add_parser("remove_key", help="remove key")
     remkey_parser.add_argument('--path', default=homepath, help=f"where is the key to remove stored (default: {homepath})")
+    remkey_parser.add_argument('--secretkey', action='store_false', help="delete also secret-key")
     remkey_parser.add_argument('email', help="user name")
     remkey_parser.set_defaults(func=remove_key)
 
@@ -275,7 +294,7 @@ if __name__ == '__main__':
 
     expkey_parser = subparsers.add_parser("export_key", help="export key and just keep the public key")
     expkey_parser.add_argument('--path', default=homepath, help=f"where is the keyring the key should get imported to (default: {homepath})")
-    expkey_parser.add_argument('email', help="the key to export")
+    expkey_parser.add_argument('fingerprint', help="the fingerprint of the key to export")
     expkey_parser.add_argument('passphrase', help="passphrase")
     expkey_parser.set_defaults(func=export_key)
 
