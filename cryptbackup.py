@@ -138,7 +138,7 @@ def cleanupL4(keepFilesCount):
 def cleanupLevel(level, before_ts):
     logging.info(f"delete files in '{level}' older than '{before_ts}'")
     for file in os.listdir(backupDirs[level]):
-        file_ts = dt.strptime(file.split("_")[0], "%Y%m%d%H%M%S")
+        file_ts = dt.strptime(file.split("_")[0], "%Y-%m-%d-%H-%M-%S")
         if(file_ts < before_ts):
             os.remove(os.path.join(backupDirs[level], file))
             logging.info(f"'{file}' with ts:'{file_ts}' deleted in '{level}'")
@@ -174,7 +174,7 @@ def getYoungsters():
         backupFiles = os.listdir(backupDirs[level])
         youngster = sorted(backupFiles)[-1]
         string_ts = youngster.split("_")[0]
-        youngster_ts = dt.strptime(string_ts, "%Y%m%d%H%M%S")
+        youngster_ts = dt.strptime(string_ts, "%Y-%m-%d-%H-%M-%S")
         youngsters[level] = (youngster, youngster_ts)
         logging.info(f"Youngest file in '{backupDirs[level]}': '{youngster}'")
 
@@ -204,10 +204,14 @@ def doInitialSetup(cryptedFile):
 def encryptFile(file, keyName, keyDir, testmode):
     outputPath, fileName = os.path.split(file)
     if(testmode):
-        l1_youngster = dt.strptime(sorted(os.listdir(backupDirs["level_1"]))[-1].split("_")[0], "%Y%m%d%H%M%S")
-        ts = (l1_youngster + timedelta(days=1)).strftime("%Y%m%d%H%M%S")
+        try:
+            l1_youngster = dt.strptime(sorted(os.listdir(backupDirs["level_1"]))[-1].split("_")[0], "%Y-%m-%d-%H-%M-%S")
+            ts = (l1_youngster + timedelta(days=1)).strftime("%Y-%m-%d-%H-%M-%S")
+        except:
+            print("before running the test mode you have to run at least 4 times in normal mode.")
+            exit()
     else:
-        ts = dt.now().strftime("%Y%m%d%H%M%S")
+        ts = dt.now().strftime("%Y-%m-%d-%H-%M-%S")
     
     outputFile = os.path.join(outputPath, f"{ts}_{fileName}.gpg")
     status = os.system(f"gpg2 --homedir {keyDir} -o {outputFile} -e -r {keyName} {file}")
