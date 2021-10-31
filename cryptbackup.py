@@ -14,12 +14,13 @@ import argparse
 import platform
 import shutil
 import logging
+import subprocess
 
 from pprint import pprint
 from pathlib import Path
 from datetime import datetime as dt, timedelta
 
-KEYLEN = 4096
+ALGO = 'ed25519'
 periodUnits = {"level_2":"days", "level_3":"weeks", "level_4":"months"}  # possible: microseconds, milliseconds, seconds, minutes, hours, days, weeks, months, years
 backupLevels = ("level_1", "level_2", "level_3", "level_4")
 backupDirs = dict() #to store the directorys for the various backup levels
@@ -28,61 +29,83 @@ youngsters = dict() #to store the newest file for the various levels
 #-----------------------------------------------------------------------------------------------------------
 #--------------------------------------------------key stuf-------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------
+def info_key(args):
+    print("\n--------------------------List Keys-----------------------------")
+    os.system(f"gpg2 --homedir {args.path} --list-keys")
+    print("----------------------------------------------------------------")
+    print("\n")
+    print("-----------------------List secret Keys-------------------------")
+    os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
+    print("----------------------------------------------------------------")
 
-def generateKey(email, passphrase, path, clean=False):
-    if clean: os.system(f'rm -rf {path}/*')
-    gpg = gnupg.GPG(homedir=args.path)
-    #default is RSA
-    input_data = gpg.gen_key_input(
-        key_length = KEYLEN,
-        expire_date = 0,
-        name_email=email,
-        passphrase=passphrase)
-    key = gpg.gen_key(input_data)
-    print (f'Key generated fingerprint: {key.fingerprint}')
-    print('Output:')
-    pprint(key.stderr)
-    return key
+
+def generateKey(email, passphrase, path):
+    retProc = subprocess.run(f"gpg2 --quick-gen-key --homedir {path} --batch --pinentry-mode loopback --passphrase {passphrase} {email} {ALGO} sign never", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    procOutput=retProc.stdout.decode("utf-8")
+    pprint(procOutput)
+    if(retProc.returncode==0):
+        try:
+            #todo: find a better way to extract fingerprint
+            revocOutput = procOutput.splitlines()[1]
+            fingerprint = revocOutput.split("/")[-1].split(".")[0]
+            print(f"Key generated with fingerprint: {fingerprint}")
+            return fingerprint
+        except:
+            print("something went wrong with fingerprint extraction")
+            exit()
+    else:
+        print(f"key gneration failed: {retProc.stdout}")
+        exit()
+
 
 def add_key(args):
     print("-------------Before key generation--------------------")
     os.system(f"gpg2 --homedir {args.path} --list-keys")
     os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
-    genKey = generateKey(args.email, args.passphrase, args.path, True)
+    fingerprint = generateKey(args.email, args.passphrase, args.path)
     print("--------------After key generation-----------------list-keys----------")
     os.system(f"gpg2 --homedir {args.path} --list-keys")
     print("--------------After key generation-----------------list-secret-keys---")
     os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
 
-    args.fingerprint = genKey.fingerprint
-    export_key(args)
-    
-    print(f"list-keys fingerprint:{genKey.fingerprint}--------")
-    os.system(f"gpg2 --homedir {args.path} --list-keys {genKey.fingerprint}")
-    print(f"list-secret-keys fingerprint:{genKey.fingerprint}")
-    os.system(f"gpg2 --homedir {args.path} --list-secret-keys {genKey.fingerprint}")
-
-    print( "\n\n\n--------------------------------------------------------------------------------------")
-    print( "!!!!!!!!!!!!Do not forget to backup the key and remove it from the system!!!!!!!!!!!!!")
-    print(f"-------------------{os.path.join(args.exportto, 'priv_key.asc')}------------")
+    args.fingerprint = fingerprint
+    exportFile = f"priv_key_{fingerprint}.asc"
+    status = export_key(args)
+    if(status==0):
+        print(f"private key exported to '{os.path.join(args.export_to, exportFile)}'")
+        print("\n\n\n--------------------------------------------------------------------------------------")
+        print(f"Key '{args.email}' generated with fingerprint '{args.fingerprint}'")
+        print( "!!!!!!!!!!!!Do not forget to backup the key and remove it from the system!!!!!!!!!!!!!")
+        print(f"-------------------{os.path.join(args.export_to, exportFile)}------------")
 
 
 def export_key(args):
+    exportFile = f"priv_key_{args.fingerprint}.asc"
     print("-------------Before key removal--------------------")
     os.system(f"gpg2 --homedir {args.path} --list-keys")
     os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
     print("---------export and delete secret keys--------------------------------")
-    os.system(f"gpg2 -a --homedir {args.path} --batch --pinentry-mode loopback --passphrase {args.passphrase} --export-secret-keys {args.fingerprint} > {os.path.join(args.exportto, 'priv_key.asc')}")
-    #os.system(f"gpg2 --homedir {args.path} --batch --pinentry-mode loopback --passphrase {args.passphrase} --export-secret-keys {genKey.fingerprint} > priv_key.bin")
-    os.system(f"gpg2 --homedir {args.path} --batch --pinentry-mode loopback --yes --passphrase {args.passphrase} --delete-secret-keys {args.fingerprint}")
-    print(f"private key exported to '{os.path.join(args.exportto, 'priv_key.asc')}'")
-    print("...\n...\n...")
-    print("---------------After key removal-------------------list-keys----------")
-    os.system(f"gpg2 --homedir {args.path} --list-keys")
-    print("---------------After key removal-------------------list-secret-keys---")
-    print("----------this call should generate an error--------------------------")
-    os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
-
+    #todo: no error occurs if no secret key exists to export
+    status = os.system(f"set -o noclobber && gpg2 -a --homedir {args.path} --batch --pinentry-mode loopback --passphrase {args.passphrase} --export-secret-keys {args.fingerprint} > {os.path.join(args.export_to, exportFile)}")
+    if(status==0):
+        print(f"private key exported to '{os.path.join(args.export_to, exportFile)}'")
+        #for this command the fingerprint is needed
+        os.system(f"gpg2 --homedir {args.path} --batch --yes --pinentry-mode loopback --passphrase {args.passphrase} --delete-secret-keys {args.fingerprint}")
+        print("Removing private key from keyring...\n...\n...")
+        print("---------------After key removal-------------------list-keys----------")
+        os.system(f"gpg2 --homedir {args.path} --list-keys")
+        print("---------------After key removal-------------------list-secret-keys---")
+        print("----------nothing should be listed below------------------------------")
+        os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
+    else:
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print(f"Key not exported. exit code: {status}")
+        print(f"Check if '{os.path.join(args.export_to, exportFile)}' already exists. Overwriting is not supported with this command.")
+        print(f"Check if key exists with the fingerprint '{args.fingerprint}'")
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    
+    return status
+    
 
 def remove_key(args):
     if(args.secretkey):
@@ -105,18 +128,18 @@ def remove_key(args):
     
 
 def import_key(args):
-    gpg = gnupg.GPG(homedir=args.path)
-    #gpg.encoding = 'utf-8'
-    key_data = open(args.keyfile, 'rb').read()
-    import_result = gpg.import_keys(key_data)
-    pprint("-------------------------------------------------------------------------------------------")
-    pprint("Attention: propably the secret private key is now also in the keyring on the local machine!")
-    pprint(f"Check output of command: 'gpg2 --homedir {args.path} --list-secret-keys'")
-    pprint("-------------------------------------------------------------------------------------------")
+    status = os.system(f"gpg2 --homedir {args.path} --import {args.keyfile}")
+    if(status==0):
+        print(f"Key '{args.keyfile}' successfully imported.")
+    else:
+        print(f"import failed: exit code = '{status}'")
+    
     os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
 
-    pprint(import_result.results)
-    return import_result
+    print("-------------------------------------------------------------------------------------------")
+    print("Attention: propably the secret private key is now also in the keyring on the local machine!")
+    print(f"Check output of command: 'gpg2 --homedir {args.path} --list-secret-keys'")
+    print("-------------------------------------------------------------------------------------------")
 
 
 #-----------------------------------------------------------------------------------------------------------
@@ -265,7 +288,7 @@ def backup_handling(args):
 def restore_handling(args):
     status = os.system(f"gpg2 --homedir {args.path} -u {args.email} -o {args.dst} -d {args.src}")
     if(status==0):
-        print(f"File '{args.src}' successfully decrypted to '{args.dst}'")
+        print(f"File '{args.src}' successfully decrypted and stored to '{args.dst}'")
     else:
         print(f"restore failed: exit code = '{status}'")
 
@@ -286,17 +309,21 @@ if __name__ == '__main__':
     main_parser = argparse.ArgumentParser(description="A tool to do encrypted backups of a single file.")
     subparsers = main_parser.add_subparsers(title="subcommands", dest="sub_func", required=True, description="type subcommand -h to get help", help="additional help")
 
+    infokey_parser = subparsers.add_parser("key_info", help="get key infos")
+    infokey_parser.add_argument('--path', default=keyDir, help=f"where is the keyring the key should get imported to (default: '{keyDir}')")
+    infokey_parser.set_defaults(func=info_key)
+
     addkey_parser = subparsers.add_parser("add_key", help="generate key and export the secret key")
     addkey_parser.add_argument('--path', default=keyDir, help=f"where should the key get stored (default: '{keyDir}')")
-    addkey_parser.add_argument('--exportto', default=homeDir, help=f"where to export the key file (default: '{homeDir}'")
-    addkey_parser.add_argument('email', help="user name")
+    addkey_parser.add_argument('--export_to', default=homeDir, help=f"where to export the private key file (default: '{homeDir}'")
+    addkey_parser.add_argument('email', help="keyname,... email in most cases")
     addkey_parser.add_argument('passphrase', help="passphrase")
     addkey_parser.set_defaults(func=add_key)
   
     remkey_parser = subparsers.add_parser("remove_key", help="remove key")
     remkey_parser.add_argument('--path', default=keyDir, help=f"where is the key to remove stored (default: '{keyDir}')")
     remkey_parser.add_argument('--secretkey', action='store_false', help="delete also secret-key")
-    remkey_parser.add_argument('email', help="user name")
+    remkey_parser.add_argument('email', help="keyname,... email in most cases")
     remkey_parser.set_defaults(func=remove_key)
 
     impkey_parser = subparsers.add_parser("import_key", help="import key")
@@ -304,25 +331,26 @@ if __name__ == '__main__':
     impkey_parser.add_argument('keyfile', help="the keyfile to import")
     impkey_parser.set_defaults(func=import_key)
 
-    expkey_parser = subparsers.add_parser("export_key", help="export key and just keep the public key")
+    expkey_parser = subparsers.add_parser("export_key", help="export key and just keep the public key in the keyring")
     expkey_parser.add_argument('--path', default=keyDir, help=f"where is the keyring the key should get imported to (default: '{keyDir}')")
-    expkey_parser.add_argument('fingerprint', help="the fingerprint of the key to export")
+    expkey_parser.add_argument('--export_to', default=homeDir, help=f"where to export the key file (default: '{homeDir}'")
+    expkey_parser.add_argument('fingerprint', help="get the fingerprint of the key by running the key_info command.")
     expkey_parser.add_argument('passphrase', help="passphrase")
     expkey_parser.set_defaults(func=export_key)
 
     bckp_parser = subparsers.add_parser("backup", help="backup stuff")
     bckp_parser.add_argument('src', help="path to the source file")              
-    bckp_parser.add_argument('dst', help="path to the destination folder")           #a dir
-    bckp_parser.add_argument('email', help="user name for encrytion")          #email in most cases
+    bckp_parser.add_argument('dst', help="path to the destination folder")          
+    bckp_parser.add_argument('email', help="keyname,... email in most cases")         
     bckp_parser.add_argument('--path', default=keyDir, help=f"where is the key stored (default: '{keyDir}')")
     bckp_parser.add_argument('--period', type=int, default=5, help="backup period")          
-    bckp_parser.add_argument('--delete', type=int, default=5, help="how many files should be kept in Level 4")
+    bckp_parser.add_argument('--delete', type=int, default=3, help="how many files should be kept in Level 4")
     bckp_parser.add_argument('--test', action='store_true', help="to test behaviour every call generates a timestamp with a new day")
     bckp_parser.set_defaults(func=backup_handling)
 
     rest_parser = subparsers.add_parser("restore", help="restore stuff")
-    rest_parser.add_argument('src', help="path to the source file")              #a file
-    rest_parser.add_argument('email', help="user name for encrytion")          #email in most cases
+    rest_parser.add_argument('src', help="path to the source file")              
+    rest_parser.add_argument('email', help="keyname,... email in most cases")         
     rest_parser.add_argument('--dst', default=os.path.join(homeDir, "restored.txt"), help=f"path to the destination folder (default: {os.path.join(homeDir, 'restored.txt')})")           #a dir
     rest_parser.add_argument('--path', default=keyDir, help=f"where is the key stored (default: '{keyDir}')")
     rest_parser.set_defaults(func=restore_handling)

@@ -2,7 +2,7 @@
 tool to support key handling and do encrypted backups of a single file
  
  python3 must be installed
- gpg2 must be installed
+ GnuPG must be installed
  the python package gnupg is currently still needed (pip3 install gnupg), but i want to get rid of it because it did not work 100% for me
  
 before using the backup function a key has to be added if not yet available
