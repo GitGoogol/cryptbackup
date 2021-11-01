@@ -20,7 +20,8 @@ from pprint import pprint
 from pathlib import Path
 from datetime import datetime as dt, timedelta
 
-ALGO = 'ed25519'
+ALGO = 'RSA4096'
+RECENT_DIR_NAME = "recent"
 periodUnits = {"level_2":"days", "level_3":"weeks", "level_4":"months"}  # possible: microseconds, milliseconds, seconds, minutes, hours, days, weeks, months, years
 backupLevels = ("level_1", "level_2", "level_3", "level_4")
 backupDirs = dict() #to store the directorys for the various backup levels
@@ -40,7 +41,7 @@ def info_key(args):
 
 
 def generateKey(email, passphrase, path):
-    retProc = subprocess.run(f"gpg2 --quick-gen-key --homedir {path} --batch --pinentry-mode loopback --passphrase {passphrase} {email} {ALGO} sign never", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    retProc = subprocess.run(f"gpg2 --quick-gen-key --homedir {path} --batch --pinentry-mode loopback --passphrase {passphrase} {email} {ALGO} encr never", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     procOutput=retProc.stdout.decode("utf-8")
     pprint(procOutput)
     if(retProc.returncode==0):
@@ -72,8 +73,8 @@ def add_key(args):
     exportFile = f"priv_key_{fingerprint}.asc"
     status = export_key(args)
     if(status==0):
-        print(f"private key exported to '{os.path.join(args.export_to, exportFile)}'")
         print("\n\n\n--------------------------------------------------------------------------------------")
+        print(f"private key exported to '{os.path.join(args.export_to, exportFile)}'")
         print(f"Key '{args.email}' generated with fingerprint '{args.fingerprint}'")
         print( "!!!!!!!!!!!!Do not forget to backup the key and remove it from the system!!!!!!!!!!!!!")
         print(f"-------------------{os.path.join(args.export_to, exportFile)}------------")
@@ -83,9 +84,14 @@ def export_key(args):
     exportFile = f"priv_key_{args.fingerprint}.asc"
     print("-------------Before key removal--------------------")
     os.system(f"gpg2 --homedir {args.path} --list-keys")
-    os.system(f"gpg2 --homedir {args.path} --list-secret-keys")
+    retProc = subprocess.run(f"gpg2 --homedir {args.path} --list-secret-keys", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if(retProc.stdout.decode("utf-8")==""):
+        print("-----------E-R-R-O-R-------------")
+        print("no secret-key available to export")
+        print("--------no key exported----------")
+        return 9999
+    print(retProc.stdout.decode("utf-8"))
     print("---------export and delete secret keys--------------------------------")
-    #todo: no error occurs if no secret key exists to export
     status = os.system(f"set -o noclobber && gpg2 -a --homedir {args.path} --batch --pinentry-mode loopback --passphrase {args.passphrase} --export-secret-keys {args.fingerprint} > {os.path.join(args.export_to, exportFile)}")
     if(status==0):
         print(f"private key exported to '{os.path.join(args.export_to, exportFile)}'")
@@ -236,7 +242,7 @@ def encryptFile(file, keyName, keyDir, testmode):
     else:
         ts = dt.now().strftime("%Y-%m-%d-%H-%M-%S")
     
-    outputFile = os.path.join(outputPath, f"{ts}_{fileName}.gpg")
+    outputFile = os.path.join(outputPath, RECENT_DIR_NAME, f"{ts}_{fileName}.gpg")
     status = os.system(f"gpg2 --homedir {keyDir} -o {outputFile} -e -r {keyName} {file}")
     if(status==0):
         logging.info(f"File '{file}' encrypted with key '{keyName}' from '{keyDir}' -> '{outputFile}'")
@@ -253,6 +259,11 @@ def checkDestination(destPath):
         if(not os.path.isdir(backupDirs[level])):
             os.makedirs(backupDirs[level])
         logging.info(f"'{level}' dir: '{backupDirs[level]}'")
+    
+    recentDir = os.path.join(destPath, RECENT_DIR_NAME)
+    shutil.rmtree(recentDir, ignore_errors=True)
+    os.makedirs(recentDir)
+    logging.info(f"'{RECENT_DIR_NAME}' dir: 'recentDir'")
 
 
 def backup_handling(args):
@@ -271,7 +282,7 @@ def backup_handling(args):
     if(doInitialSetup(cryptedFile) == False):
         exit()
     else:
-        shutil.move(cryptedFile, backupDirs["level_1"])
+        shutil.copy(cryptedFile, backupDirs["level_1"])
     
     getYoungsters()
 
