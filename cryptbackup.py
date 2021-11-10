@@ -210,19 +210,19 @@ def getYoungsters():
 
 def doInitialSetup(cryptedFile):
     if(not any(os.scandir(backupDirs["level_4"]))):
-        shutil.move(cryptedFile, backupDirs["level_4"])
+        shutil.copy(cryptedFile, backupDirs["level_4"])
         logging.info(f"Initial Setup: '{cryptedFile}' moved to '{backupDirs['level_4']}'")
         return False
     elif(not any(os.scandir(backupDirs["level_3"]))):
-        shutil.move(cryptedFile, backupDirs["level_3"])
+        shutil.copy(cryptedFile, backupDirs["level_3"])
         logging.info(f"Initial Setup: '{cryptedFile}' moved to '{backupDirs['level_3']}'")
         return False
     elif(not any(os.scandir(backupDirs["level_2"]))):
-        shutil.move(cryptedFile, backupDirs["level_2"])
+        shutil.copy(cryptedFile, backupDirs["level_2"])
         logging.info(f"Initial Setup: '{cryptedFile}' moved to '{backupDirs['level_2']}'")
         return False
     elif(not any(os.scandir(backupDirs["level_1"]))):
-        shutil.move(cryptedFile, backupDirs["level_1"])
+        shutil.copy(cryptedFile, backupDirs["level_1"])
         logging.info(f"Initial Setup: '{cryptedFile}' moved to '{backupDirs['level_1']}'")
         return False
     else:
@@ -266,6 +266,16 @@ def checkDestination(destPath):
     logging.info(f"'{RECENT_DIR_NAME}' dir: 'recentDir'")
 
 
+def get_source_file(strPath):
+    if(os.path.isfile(strPath)): return strPath
+    elif(os.path.isdir(strPath)):
+        dirList = os.scandir(strPath)
+        fileList = [file for file in dirList if file.is_file()]
+        return os.path.abspath(max(fileList, key=os.path.getctime))
+    else:
+        print(f"Parameter error: '{strPath}' is not a file nor a directory")
+        exit()
+
 def backup_handling(args):
     #new concept
     #vier Ordner L1(Tagesbackups), L2(älter als x Tage), L3(älter als x Wochen) und L4(älter als x Monate)
@@ -275,7 +285,13 @@ def backup_handling(args):
     #wenn File in nächstes Level geschoben, lösche im aktuellen Level alle Files die älter sind als jüngstes File im nächsten Level vor dem Verschieben
     
     checkDestination(args.dst)
-    tmpFile = shutil.copy(args.src, args.dst) #just copy the file in the root to encrypt and move it afterwards
+    srcFile = get_source_file(args.src)
+
+    if(args.copy):
+        tmpFile = shutil.copy(srcFile, args.dst) #copy the file in the root to encrypt and move it afterwards
+    else:
+        tmpFile = shutil.move(srcFile, args.dst) #move the file in the root to encrypt and move it afterwards
+
     cryptedFile = encryptFile(tmpFile, args.email, args.path, args.test)
     os.remove(tmpFile)
 
@@ -333,7 +349,7 @@ if __name__ == '__main__':
   
     remkey_parser = subparsers.add_parser("remove_key", help="remove key")
     remkey_parser.add_argument('--path', default=keyDir, help=f"where is the key to remove stored (default: '{keyDir}')")
-    remkey_parser.add_argument('--secretkey', action='store_false', help="delete also secret-key")
+    remkey_parser.add_argument('--secretkey', action='store_true', help="delete also secret-key")
     remkey_parser.add_argument('email', help="keyname,... email in most cases")
     remkey_parser.set_defaults(func=remove_key)
 
@@ -350,9 +366,10 @@ if __name__ == '__main__':
     expkey_parser.set_defaults(func=export_key)
 
     bckp_parser = subparsers.add_parser("backup", help="backup stuff")
-    bckp_parser.add_argument('src', help="path to the source file")              
+    bckp_parser.add_argument('src', help="path to the source file; giving just a path takes the most recent file to backup.")              
     bckp_parser.add_argument('dst', help="path to the destination folder")          
-    bckp_parser.add_argument('email', help="keyname,... email in most cases")         
+    bckp_parser.add_argument('email', help="keyname,... email in most cases")      
+    bckp_parser.add_argument('--copy', action='store_true', help="copy the src file instead of moving it")   
     bckp_parser.add_argument('--path', default=keyDir, help=f"where is the key stored (default: '{keyDir}')")
     bckp_parser.add_argument('--period', type=int, default=5, help="backup period")          
     bckp_parser.add_argument('--delete', type=int, default=3, help="how many files should be kept in Level 4")
