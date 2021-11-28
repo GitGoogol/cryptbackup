@@ -48,7 +48,7 @@ def generateKey(email, passphrase, path):
     if(retProc.returncode==0):
         try:
             #todo: find a better way to extract fingerprint
-            revocOutput = procOutput.splitlines()[1]
+            revocOutput = procOutput.splitlines()[-1]
             fingerprint = revocOutput.split("/")[-1].split(".")[0]
             print(f"Key generated with fingerprint: {fingerprint}")
             return fingerprint
@@ -344,8 +344,8 @@ if __name__ == '__main__':
     addkey_parser = subparsers.add_parser("add_key", help="generate key and export the secret key")
     addkey_parser.add_argument('--path', default=keyDir, help=f"where should the key get stored (default: '{keyDir}')")
     addkey_parser.add_argument('--export_to', default=homeDir, help=f"where to export the private key file (default: '{homeDir}'")
-    addkey_parser.add_argument('email', help="keyname,... email in most cases")
-    addkey_parser.add_argument('passphrase', help="passphrase")
+    addkey_parser.add_argument('email', help="keyname,... email in most cases. IMPORTANT: put email in single quotes!!!")
+    addkey_parser.add_argument('passphrase', help="passphrase. IMPORTANT: put passphrase in single quotes!!!")
     addkey_parser.set_defaults(func=add_key)
   
     remkey_parser = subparsers.add_parser("remove_key", help="remove key")
@@ -363,7 +363,7 @@ if __name__ == '__main__':
     expkey_parser.add_argument('--path', default=keyDir, help=f"where is the keyring the key should get imported to (default: '{keyDir}')")
     expkey_parser.add_argument('--export_to', default=homeDir, help=f"where to export the key file (default: '{homeDir}'")
     expkey_parser.add_argument('fingerprint', help="get the fingerprint of the key by running the key_info command.")
-    expkey_parser.add_argument('passphrase', help="passphrase")
+    expkey_parser.add_argument('passphrase', help="passphrase. IMPORTANT: put passphrase in single quotes!!!")
     expkey_parser.set_defaults(func=export_key)
 
     bckp_parser = subparsers.add_parser("backup", help="backup stuff")
@@ -386,7 +386,7 @@ if __name__ == '__main__':
     rest_parser.set_defaults(func=restore_handling)
 
     args = main_parser.parse_args()
-    logging.info(args)
+    #logging.info(args) #      !!!!!   will put the passphrase in the log    !!!!!
     args.func(args)
         
         
