@@ -15,6 +15,7 @@ import platform
 import shutil
 import logging
 import subprocess
+import fnmatch
 
 from pprint import pprint
 from pathlib import Path
@@ -266,14 +267,14 @@ def checkDestination(destPath):
     logging.info(f"'{RECENT_DIR_NAME}' dir: 'recentDir'")
 
 
-def get_source_file(strPath):
+def get_source_file(strPath, pattern):
     if(os.path.isfile(strPath)): return strPath
     elif(os.path.isdir(strPath)):
         dirList = os.scandir(strPath)
-        fileList = [file for file in dirList if file.is_file()]
+        fileList = [file for file in dirList if file.is_file() and fnmatch.fnmatch(file.name, pattern)]
         return os.path.abspath(max(fileList, key=os.path.getctime))
     else:
-        print(f"Parameter error: '{strPath}' is not a file nor a directory")
+        print(f"'{strPath}' is not a file nor a directory, so nothing to backup")
         exit()
 
 def backup_handling(args):
@@ -285,7 +286,7 @@ def backup_handling(args):
     #wenn File in nächstes Level geschoben, lösche im aktuellen Level alle Files die älter sind als jüngstes File im nächsten Level vor dem Verschieben
     
     checkDestination(args.dst)
-    srcFile = get_source_file(args.src)
+    srcFile = get_source_file(args.src, args.pattern)
 
     if(args.copy):
         tmpFile = shutil.copy(srcFile, args.dst) #copy the file in the root to encrypt and move it afterwards
@@ -368,7 +369,8 @@ if __name__ == '__main__':
     bckp_parser = subparsers.add_parser("backup", help="backup stuff")
     bckp_parser.add_argument('src', help="path to the source file; giving just a path takes the most recent file to backup.")              
     bckp_parser.add_argument('dst', help="path to the destination folder")          
-    bckp_parser.add_argument('email', help="keyname,... email in most cases")      
+    bckp_parser.add_argument('email', help="keyname,... email in most cases")   
+    bckp_parser.add_argument('--pattern', default='*', help="only considered if src is a path; use a pattern as in pyhton fnmatch described")   
     bckp_parser.add_argument('--copy', action='store_true', help="copy the src file instead of moving it")   
     bckp_parser.add_argument('--path', default=keyDir, help=f"where is the key stored (default: '{keyDir}')")
     bckp_parser.add_argument('--period', type=int, default=5, help="backup period")          
